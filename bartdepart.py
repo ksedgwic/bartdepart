@@ -4,6 +4,7 @@ import httpx
 import os
 import sys
 import time
+from collections import deque
 
 import pytz
 
@@ -18,8 +19,9 @@ BART_DIRECTION = "South"
 BART_API_KEY = os.getenv("BART_API_KEY")
 BART_API_URL = f"https://api.bart.gov/api/etd.aspx?cmd=etd&orig={BART_ORIG}&key={BART_API_KEY}&json=y"
 BART_SECS = 60
+BART_NGHOST = 4
 
-ETD_DATA = None
+ETD_DATA = deque(maxlen=BART_NGHOST)
 
 async def fetch_bart_data():
     async with httpx.AsyncClient() as client:
@@ -81,7 +83,7 @@ def process_etd(data):
         etd_formatted = time.strftime("%H:%M:%S", time.localtime(etd))
         print(f" ({etd_formatted}:{color})", end="")
     print()
-    ETD_DATA = { 'tstamp': tstamp, 'etds': etds }
+    ETD_DATA.append({ 'tstamp': tstamp, 'etds': etds })
 
 async def track_bart():
     while True:
@@ -128,47 +130,54 @@ def rgb_to_hex(rgb, gamma_r=2.4, gamma_g=2.0, gamma_b=1.6):
     b_corrected = int((b ** gamma_b) * 255)
     return f"{r_corrected:02X}{g_corrected:02X}{b_corrected:02X}"
 
+GHOST_WEIGHT = [0.40, 0.30, 0.20, 0.10]
+
 def compute_seg(seq):
     global ETD_DATA
     now = time.time()
-    if ETD_DATA == None:
-        return [item for index in range(WLED_NLEDS) for item in (index, get_color(seq+index))]
+    # if ETD_DATA == None:
+    #     return [item for index in range(WLED_NLEDS) for item in (index, get_color(seq+index))]
+
     rgb_array = [(0.0, 0.0, 0.0) for _ in range(WLED_NLEDS)]
-    for etd in ETD_DATA['etds']:
-        delta = int(etd[0] - now)
-        index = delta / 60
-        int_index = int(index)
-        frac_index = index - int_index
-        if 0 <= int_index < WLED_NLEDS:
-            r, g, b = scale_rgb(COLOR_MAP[etd[1]], WLED_BRIGHTNESS)
+    # iterate from most recent to oldest
+    for ghost_index, ghost in enumerate(reversed(ETD_DATA)):
+        for etd in ghost['etds']:
+            delta = int(etd[0] - now)
+            if delta < 0:
+                continue
+            index = delta / 60
+            int_index = int(index)
+            frac_index = index - int_index
+            if 0 <= int_index < WLED_NLEDS:
+                r, g, b = scale_rgb(COLOR_MAP[etd[1]], WLED_BRIGHTNESS)
 
-            # Full value if index is exactly an integer
-            if frac_index == 0:
-                rgb_array[int_index] = (
-                    rgb_array[int_index][0] + r,
-                    rgb_array[int_index][1] + g,
-                    rgb_array[int_index][2] + b,
-                )
-            else:
-                # Distribute based on fractional part
-                lower_weight = 1 - frac_index
-                upper_weight = frac_index
-
-                # Accumulate the lower part
-                if 0 <= int_index < WLED_NLEDS:
+                # Full value if index is exactly an integer
+                if frac_index == 0:
                     rgb_array[int_index] = (
-                        rgb_array[int_index][0] + r * lower_weight,
-                        rgb_array[int_index][1] + g * lower_weight,
-                        rgb_array[int_index][2] + b * lower_weight,
+                        rgb_array[int_index][0] + r * GHOST_WEIGHT[ghost_index],
+                        rgb_array[int_index][1] + g * GHOST_WEIGHT[ghost_index],
+                        rgb_array[int_index][2] + b * GHOST_WEIGHT[ghost_index],
                     )
+                else:
+                    # Distribute based on fractional part
+                    lower_weight = (1.0 - frac_index) * GHOST_WEIGHT[ghost_index]
+                    upper_weight = frac_index * GHOST_WEIGHT[ghost_index]
 
-                # Accumulate the upper part
-                if 0 <= int_index + 1 < WLED_NLEDS:
-                    rgb_array[int_index + 1] = (
-                        rgb_array[int_index + 1][0] + r * upper_weight,
-                        rgb_array[int_index + 1][1] + g * upper_weight,
-                        rgb_array[int_index + 1][2] + b * upper_weight,
-                    )
+                    # Accumulate the lower part
+                    if 0 <= int_index < WLED_NLEDS:
+                        rgb_array[int_index] = (
+                            rgb_array[int_index][0] + r * lower_weight,
+                            rgb_array[int_index][1] + g * lower_weight,
+                            rgb_array[int_index][2] + b * lower_weight,
+                        )
+
+                    # Accumulate the upper part
+                    if 0 <= int_index + 1 < WLED_NLEDS:
+                        rgb_array[int_index + 1] = (
+                            rgb_array[int_index + 1][0] + r * upper_weight,
+                            rgb_array[int_index + 1][1] + g * upper_weight,
+                            rgb_array[int_index + 1][2] + b * upper_weight,
+                        )
     seg = [item for index in range(WLED_NLEDS) for item in (index, rgb_to_hex(rgb_array[index]))]
     return seg
 
