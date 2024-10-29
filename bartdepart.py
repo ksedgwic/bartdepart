@@ -1,9 +1,10 @@
-from datetime import datetime
+import argparse
 import asyncio
 import httpx
 import os
 import sys
 import time
+from datetime import datetime
 from collections import deque
 
 import pytz
@@ -14,20 +15,23 @@ WLED_IP = "192.168.86.49"
 WLED_NLEDS = 60
 WLED_BRIGHTNESS = 1.0
 
-BART_ORIG = "NBRK"
-BART_DIRECTION = "South"
+# BART_ORIG = "NBRK"
+# BART_DIRECTION = "South"
 BART_API_KEY = os.getenv("BART_API_KEY")
-BART_API_URL = f"https://api.bart.gov/api/etd.aspx?cmd=etd&orig={BART_ORIG}&key={BART_API_KEY}&json=y"
 BART_SECS = 60
 BART_NGHOST = 4
 
 ETD_DATA = deque(maxlen=BART_NGHOST)
 GHOST_WEIGHT = [1.0, 0.6, 0.4, 0.3]
 
-async def fetch_bart_data():
+async def fetch_bart_data(station):
+    bart_api_url = (
+        f"https://api.bart.gov/api/etd.aspx?"
+        f"cmd=etd&orig={station}&key={BART_API_KEY}&json=y"
+    )
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(BART_API_URL)
+            response = await client.get(bart_api_url)
             response.raise_for_status()  # Raise error for bad status codes
             data = response.json()       # Parse response as JSON
             return data
@@ -59,16 +63,21 @@ def grok_bart_time(time_str):
     unix_seconds = int(dt.astimezone(pytz.UTC).timestamp())
     return unix_seconds
 
-def process_etd(data):
+def harvest_etd(direction, destinations, data):
     global ETD_DATA
     now = time.time()
     tstamp = grok_bart_time(data['root']['time'])
     lag = int(now - tstamp)
     etds = []
+    saw = set()
     for station in data['root']['station']:
-        for destination in station['etd']:
-            for estimate in destination['estimate']:
-                if estimate['direction'] != BART_DIRECTION:
+        for dest in station['etd']:
+            for estimate in dest['estimate']:
+                saw.add((estimate['direction'], dest['destination']))
+                # need to filter after we record what we saw
+                if len(destinations) and dest['destination'] not in destinations:
+                    continue
+                if direction and estimate['direction'] != direction:
                     continue
                 if estimate['minutes'] == "Leaving":
                     etd = tstamp
@@ -78,6 +87,9 @@ def process_etd(data):
                     color = estimate['color']
                 etds.append((etd, color))
     etds.sort(key=lambda x: x[0])
+    if len(ETD_DATA) == 0:
+        saw_sorted = sorted(saw, key=lambda x: x[0])
+        print(f"saw {saw_sorted}")
     formatted_now = time.strftime("%H:%M:%S", time.localtime(now))
     print(f"{formatted_now}: lag {lag:>2}:", end="")
     prev_time = now
@@ -89,13 +101,13 @@ def process_etd(data):
     print()
     ETD_DATA.append({ 'tstamp': tstamp, 'etds': etds })
 
-async def track_bart():
+async def track_bart(station, direction, destinations):
     while True:
         # Retry until data is successfully fetched
         while True:
-            data = await fetch_bart_data()
+            data = await fetch_bart_data(station)
             if data:
-                process_etd(data)
+                harvest_etd(direction, destinations, data)
                 break  # Exit the retry loop once data is fetched
             else:
                 await asyncio.sleep(1)  # Retry in 1 second if no data
@@ -222,6 +234,33 @@ async def print_exception(coro):
 
 async def main() -> None:
     """Show example on controlling your WLED device."""
+    parser = argparse.ArgumentParser(description="Process BART station and destinations.")
+    parser.add_argument(
+        "-s", "--station",
+        type=str,
+        required=True,
+        help="Four-character code for the station"
+    )
+    parser.add_argument(
+        "-d", "--direction",
+        type=str, 
+        choices=["North", "South"], 
+        help="Specify the direction"
+    )
+    parser.add_argument(
+        "-t", "--destination",
+        action="append",
+        help="Destination code (can be provided multiple times)"
+    )
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Access the arguments
+    station = args.station
+    direction = args.direction
+    destinations = args.destination if args.destination else []  # Default to an empty list if None
+
     async with WLED(WLED_IP) as wled:
         await wled.connect()
         if wled.connected:
@@ -231,7 +270,7 @@ async def main() -> None:
         listener = asyncio.create_task(print_exception(wled.listen(callback=wled_updated)))
 
         # Start the BART tracker
-        tracker = asyncio.create_task(print_exception(track_bart()))
+        tracker = asyncio.create_task(print_exception(track_bart(station, direction, destinations)))
 
         # Start the display updates
         display = asyncio.create_task(print_exception(update_display(wled)))
