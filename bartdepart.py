@@ -22,6 +22,7 @@ BART_SECS = 60
 BART_NGHOST = 4
 
 ETD_DATA = deque(maxlen=BART_NGHOST)
+GHOST_WEIGHT = [1.0, 0.6, 0.4, 0.3]
 
 async def fetch_bart_data():
     async with httpx.AsyncClient() as client:
@@ -118,9 +119,17 @@ COLOR_MAP = {
     'WHITE':	(1.0, 1.0, 1.0),
 }
 
+def normalize_rgb(rgb):
+    # Find the maximum component in the tuple
+    max_value = max(rgb)
+    # If the maximum component is greater than 1.0, scale each component
+    if max_value > 1.0:
+        return tuple(component / max_value for component in rgb)
+    else:
+        return rgb  # If max_value is 1.0 or less, return as is
+
 def scale_rgb(rgb, factor):
-    # Multiply each component by the factor and ensure the result is within 0-1
-    return tuple(min(1.0, max(0.0, component * factor)) for component in rgb)
+    return tuple(component * factor for component in rgb)
 
 def rgb_to_hex(rgb, gamma_r=2.4, gamma_g=2.0, gamma_b=1.6):
     r, g, b = (max(0.0, min(1.0, component)) for component in rgb)
@@ -129,8 +138,6 @@ def rgb_to_hex(rgb, gamma_r=2.4, gamma_g=2.0, gamma_b=1.6):
     g_corrected = int((g ** gamma_g) * 255)
     b_corrected = int((b ** gamma_b) * 255)
     return f"{r_corrected:02X}{g_corrected:02X}{b_corrected:02X}"
-
-GHOST_WEIGHT = [0.40, 0.30, 0.20, 0.10]
 
 def compute_seg(seq):
     global ETD_DATA
@@ -178,7 +185,14 @@ def compute_seg(seq):
                             rgb_array[int_index + 1][1] + g * upper_weight,
                             rgb_array[int_index + 1][2] + b * upper_weight,
                         )
-    seg = [item for index in range(WLED_NLEDS) for item in (index, rgb_to_hex(rgb_array[index]))]
+    seg = [
+        item
+        for index in range(WLED_NLEDS)
+        for item in (
+            index,
+            rgb_to_hex(normalize_rgb(rgb_array[index]))
+        )
+    ]
     return seg
 
 async def update_display(wled):
