@@ -235,6 +235,53 @@ async def print_exception(coro):
 async def main() -> None:
     """Show example on controlling your WLED device."""
     parser = argparse.ArgumentParser(description="Process BART station and destinations.")
+    add_args(parser)
+    args = parser.parse_args()
+
+    # Access the arguments
+    station = args.station
+    direction = args.direction
+    destinations = args.destination if args.destination else []  # Default to an empty list if None
+
+    if args.no_wled:
+        tracker = asyncio.create_task(
+            print_exception(track_bart(station, direction, destinations)))
+        try:
+            await asyncio.gather(tracker)
+        except Exception as e:
+            print(f"One of the tasks failed with an exception: {e}")
+        finally:
+            # Ensure all tasks are canceled if any task fails
+            tracker.cancel()
+            await asyncio.gather(tracker, return_exceptions=True)
+    else:
+        async with WLED(WLED_IP) as wled:
+            await wled.connect()
+            if wled.connected:
+                print("connected!")
+
+            # Listen for WLED updates (do we need this?)
+            listener = asyncio.create_task(print_exception(wled.listen(callback=wled_updated)))
+
+            # Start the BART tracker
+            tracker = asyncio.create_task(
+                print_exception(track_bart(station, direction, destinations)))
+
+            # Start the display updates
+            display = asyncio.create_task(print_exception(update_display(wled)))
+
+            try:
+                await asyncio.gather(listener, tracker, display)
+            except Exception as e:
+                print(f"One of the tasks failed with an exception: {e}")
+            finally:
+                # Ensure all tasks are canceled if any task fails
+                listener.cancel()
+                tracker.cancel()
+                display.cancel()
+                await asyncio.gather(listener, tracker, display, return_exceptions=True)
+
+def add_args(parser):
     parser.add_argument(
         "-s", "--station",
         type=str,
@@ -243,8 +290,8 @@ async def main() -> None:
     )
     parser.add_argument(
         "-d", "--direction",
-        type=str, 
-        choices=["North", "South"], 
+        type=str,
+        choices=["North", "South"],
         help="Specify the direction"
     )
     parser.add_argument(
@@ -252,53 +299,11 @@ async def main() -> None:
         action="append",
         help="Destination code (can be provided multiple times)"
     )
-
-    # Parse arguments
-    args = parser.parse_args()
-
-    # Access the arguments
-    station = args.station
-    direction = args.direction
-    destinations = args.destination if args.destination else []  # Default to an empty list if None
-
-    async with WLED(WLED_IP) as wled:
-        await wled.connect()
-        if wled.connected:
-            print("connected!")
-
-        # Listen for WLED updates (do we need this?)
-        listener = asyncio.create_task(print_exception(wled.listen(callback=wled_updated)))
-
-        # Start the BART tracker
-        tracker = asyncio.create_task(print_exception(track_bart(station, direction, destinations)))
-
-        # Start the display updates
-        display = asyncio.create_task(print_exception(update_display(wled)))
-
-        try:
-            await asyncio.gather(listener, tracker, display)
-        except Exception as e:
-            print(f"One of the tasks failed with an exception: {e}")
-        finally:
-            # Ensure all tasks are canceled if any task fails
-            listener.cancel()
-            tracker.cancel()
-            display.cancel()
-            await asyncio.gather(listener, tracker, display, return_exceptions=True)
-
-async def tracker_main() -> None:
-    """Run the BART tracker only."""
-    # Start the BART tracker
-    tracker = asyncio.create_task(track_bart())
-
-    try:
-        await asyncio.gather(tracker)
-    except Exception as e:
-        print(f"One of the tasks failed with an exception: {e}")
-    finally:
-        # Ensure all tasks are canceled if any task fails
-        tracker.cancel()
-        await asyncio.gather(tracker, return_exceptions=True)
+    parser.add_argument(
+        "-n", "--no-wled",
+        action="store_true",
+        help="Run w/o using the WLED interface (text only)"
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
