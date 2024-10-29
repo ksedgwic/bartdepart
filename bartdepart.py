@@ -80,9 +80,12 @@ def process_etd(data):
     etds.sort(key=lambda x: x[0])
     formatted_now = time.strftime("%H:%M:%S", time.localtime(now))
     print(f"{formatted_now}: lag {lag:>2}:", end="")
+    prev_time = now
     for etd, color in etds:
+        delta = int((etd - prev_time) / 60)
         etd_formatted = time.strftime("%H:%M:%S", time.localtime(etd))
-        print(f" ({etd_formatted}:{color})", end="")
+        print(f" +{delta} ({etd_formatted}:{color})", end="")
+        prev_time = etd
     print()
     ETD_DATA.append({ 'tstamp': tstamp, 'etds': etds })
 
