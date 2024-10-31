@@ -63,22 +63,26 @@ def grok_bart_time(time_str):
     unix_seconds = int(dt.astimezone(pytz.UTC).timestamp())
     return unix_seconds
 
-def harvest_etd(direction, destinations, data):
+def harvest_etd(direction, platform, destinations, data):
     global ETD_DATA
     now = time.time()
     tstamp = grok_bart_time(data['root']['time'])
     lag = int(now - tstamp)
     etds = []
-    saw = set()
+    present = set()
+    showing = set()
     for station in data['root']['station']:
         for dest in station['etd']:
             for estimate in dest['estimate']:
-                saw.add((estimate['direction'], dest['destination']))
+                present.add((estimate['direction'], estimate['platform'], dest['destination']))
                 # need to filter after we record what we saw
                 if len(destinations) and dest['destination'] not in destinations:
                     continue
                 if direction and estimate['direction'] != direction:
                     continue
+                if platform and estimate['platform'] != platform:
+                    continue
+                showing.add((estimate['direction'], estimate['platform'], dest['destination']))
                 if estimate['minutes'] == "Leaving":
                     etd = tstamp
                     color = 'WHITE'
@@ -88,8 +92,10 @@ def harvest_etd(direction, destinations, data):
                 etds.append((etd, color))
     etds.sort(key=lambda x: x[0])
     if len(ETD_DATA) == 0:
-        saw_sorted = sorted(saw, key=lambda x: x[0])
-        print(f"saw {saw_sorted}")
+        present_sorted = sorted(present, key=lambda x: x[0])
+        showing_sorted = sorted(showing, key=lambda x: x[0])
+        print(f"present {present_sorted}")
+        print(f"showing {showing_sorted}")
     formatted_now = time.strftime("%H:%M:%S", time.localtime(now))
     print(f"{formatted_now}: lag {lag:>2}:", end="")
     prev_time = now
@@ -101,13 +107,13 @@ def harvest_etd(direction, destinations, data):
     print()
     ETD_DATA.append({ 'tstamp': tstamp, 'etds': etds })
 
-async def track_bart(station, direction, destinations):
+async def track_bart(station, direction, platform, destinations):
     while True:
         # Retry until data is successfully fetched
         while True:
             data = await fetch_bart_data(station)
             if data:
-                harvest_etd(direction, destinations, data)
+                harvest_etd(direction, platform, destinations, data)
                 break  # Exit the retry loop once data is fetched
             else:
                 await asyncio.sleep(1)  # Retry in 1 second if no data
@@ -163,7 +169,7 @@ def process_rgb(rgb):
     # print(val)
     return val
 
-def pattern_segment(seq):
+def test_pattern_segment(seq):
     ndx = int(seq/20)
     colors = list(COLOR_MAP.keys())
     color = colors[ndx % len(colors)]
@@ -231,11 +237,11 @@ def bart_segment(seq):
     ]
     return seg
 
-async def update_display(wled, pattern):
+async def update_display(wled, test_pattern):
     seq = 0
     while True:
-        if pattern:
-            seg_array = pattern_segment(seq)
+        if test_pattern:
+            seg_array = test_pattern_segment(seq)
         else:
             seg_array = bart_segment(seq)
         await wled.segment(0, individual=seg_array)
@@ -265,11 +271,12 @@ async def main() -> None:
     # Access the arguments
     station = args.station
     direction = args.direction
+    platform = args.platform
     destinations = args.destination if args.destination else []  # Default to an empty list if None
 
     if args.no_wled:
         tracker = asyncio.create_task(
-            print_exception(track_bart(station, direction, destinations)))
+            print_exception(track_bart(station, direction, platform, destinations)))
         try:
             await asyncio.gather(tracker)
         except Exception as e:
@@ -287,15 +294,15 @@ async def main() -> None:
             # Listen for WLED updates (do we need this?)
             listener = asyncio.create_task(print_exception(wled.listen(callback=wled_updated)))
 
-            if args.pattern:
+            if args.test_pattern:
                 tracker = None
             else:
             	# Start the BART tracker
                 tracker = asyncio.create_task(
-                    print_exception(track_bart(station, direction, destinations)))
+                    print_exception(track_bart(station, direction, platform, destinations)))
 
             # Start the display updates
-            display = asyncio.create_task(print_exception(update_display(wled, args.pattern)))
+            display = asyncio.create_task(print_exception(update_display(wled, args.test_pattern)))
 
             try:
                 if tracker:
@@ -320,6 +327,11 @@ def add_args(parser):
         help="Four-character code for the station"
     )
     parser.add_argument(
+        "-p", "--platform",
+        type=str,
+        help="Specify the platform"
+    )
+    parser.add_argument(
         "-d", "--direction",
         type=str,
         choices=["North", "South"],
@@ -336,7 +348,7 @@ def add_args(parser):
         help="Run w/o using the WLED interface (text only)"
     )
     parser.add_argument(
-        "-p", "--pattern",
+        "-x", "--test-pattern",
         action="store_true",
         help="Display a test pattern"
     )
