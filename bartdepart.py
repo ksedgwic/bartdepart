@@ -21,7 +21,7 @@ WLED_FPS = 5
 BART_API_KEY = os.getenv("BART_API_KEY")
 BART_SECS = 60
 BART_NGHOST = 4
-BART_PHASE = 10  # seconds past the minute target
+BART_PHASE = 5  # seconds past the top of the minute
 
 ETD_DATA = deque(maxlen=BART_NGHOST)
 GHOST_WEIGHT = [1.0, 0.4, 0.2, 0.1]
