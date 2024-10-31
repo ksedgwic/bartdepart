@@ -107,7 +107,7 @@ def harvest_etd(direction, platform, destinations, data):
     print()
     ETD_DATA.append({ 'tstamp': tstamp, 'etds': etds })
 
-async def track_bart(station, direction, platform, destinations):
+async def track_bart(station, *, direction=None, platform=None, destinations=None):
     while True:
         # Retry until data is successfully fetched
         while True:
@@ -273,7 +273,6 @@ async def main() -> None:
     add_args(parser)
     args = parser.parse_args()
 
-    # Access the arguments
     station = args.station
     direction = args.direction
     platform = args.platform
@@ -281,7 +280,10 @@ async def main() -> None:
 
     if args.no_wled:
         tracker = asyncio.create_task(
-            print_exception(track_bart(station, direction, platform, destinations)))
+            print_exception(track_bart(station,
+                                       direction=direction,
+                                       platform=platform,
+                                       destinations=destinations)))
         try:
             await asyncio.gather(tracker)
         except Exception as e:
@@ -304,7 +306,10 @@ async def main() -> None:
             else:
             	# Start the BART tracker
                 tracker = asyncio.create_task(
-                    print_exception(track_bart(station, direction, platform, destinations)))
+                    print_exception(track_bart(station,
+                                               direction=direction,
+                                               platform=platform,
+                                               destinations=destinations)))
 
             # Start the display updates
             display = asyncio.create_task(print_exception(update_display(wled, args.test_pattern)))
