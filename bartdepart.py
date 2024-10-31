@@ -165,9 +165,14 @@ def rgb_to_hex(rgb):
     return f"{r:02X}{g:02X}{b:02X}"
 
 def process_rgb(rgb):
-    val = rgb_to_hex(compensate(apply_gamma(fit_rgb(rgb))))
-    # print(val)
-    return val
+    try:
+        val = rgb_to_hex(compensate(apply_gamma(fit_rgb(rgb))))
+        # print(val)
+        return val
+    except Exception as e:
+        print("Exception in process_rgb:", e)
+        print("Original input RGB:", rgb)
+        sys.exit(1)
 
 def test_pattern_segment(seq):
     ndx = int(seq/20)
