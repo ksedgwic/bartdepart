@@ -154,12 +154,24 @@ def rgb_to_hex(rgb, gamma_r=2.4, gamma_g=2.0, gamma_b=1.6):
     b_corrected = int((b ** gamma_b) * 255)
     return f"{r_corrected:02X}{g_corrected:02X}{b_corrected:02X}"
 
-def compute_seg(seq):
+def pattern_segment(seq):
+    ndx = int(seq/20)
+    colors = list(COLOR_MAP.keys())
+    color = colors[ndx % len(colors)]
+    rgb = COLOR_MAP[color]
+    ndx = 0
+    factor = 0.0
+    seg = []
+    while factor <= 1.0:
+        seg.append(ndx)
+        seg.append(rgb_to_hex(normalize_rgb(scale_rgb(rgb, factor))))
+        ndx += 1
+        factor += 0.1
+    return seg
+
+def bart_segment(seq):
     global ETD_DATA
     now = time.time()
-    # if ETD_DATA == None:
-    #     return [item for index in range(WLED_NLEDS) for item in (index, get_color(seq+index))]
-
     rgb_array = [(0.0, 0.0, 0.0) for _ in range(WLED_NLEDS)]
     # iterate from most recent to oldest
     for ghost_index, ghost in enumerate(reversed(ETD_DATA)):
@@ -210,10 +222,13 @@ def compute_seg(seq):
     ]
     return seg
 
-async def update_display(wled):
+async def update_display(wled, pattern):
     seq = 0
     while True:
-        seg_array = compute_seg(seq)
+        if pattern:
+            seg_array = pattern_segment(seq)
+        else:
+            seg_array = bart_segment(seq)
         await wled.segment(0, individual=seg_array)
         await asyncio.sleep(0.01)
         seq += 1
@@ -263,21 +278,28 @@ async def main() -> None:
             # Listen for WLED updates (do we need this?)
             listener = asyncio.create_task(print_exception(wled.listen(callback=wled_updated)))
 
-            # Start the BART tracker
-            tracker = asyncio.create_task(
-                print_exception(track_bart(station, direction, destinations)))
+            if args.pattern:
+                tracker = None
+            else:
+            	# Start the BART tracker
+                tracker = asyncio.create_task(
+                    print_exception(track_bart(station, direction, destinations)))
 
             # Start the display updates
-            display = asyncio.create_task(print_exception(update_display(wled)))
+            display = asyncio.create_task(print_exception(update_display(wled, args.pattern)))
 
             try:
-                await asyncio.gather(listener, tracker, display)
+                if tracker:
+                    await asyncio.gather(listener, tracker, display)
+                else:
+                    await asyncio.gather(listener, display)
             except Exception as e:
                 print(f"One of the tasks failed with an exception: {e}")
             finally:
                 # Ensure all tasks are canceled if any task fails
                 listener.cancel()
-                tracker.cancel()
+                if tracker:
+                    tracker.cancel()
                 display.cancel()
                 await asyncio.gather(listener, tracker, display, return_exceptions=True)
 
@@ -303,6 +325,11 @@ def add_args(parser):
         "-n", "--no-wled",
         action="store_true",
         help="Run w/o using the WLED interface (text only)"
+    )
+    parser.add_argument(
+        "-p", "--pattern",
+        action="store_true",
+        help="Display a test pattern"
     )
 
 if __name__ == "__main__":
