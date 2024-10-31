@@ -22,7 +22,7 @@ BART_SECS = 60
 BART_NGHOST = 4
 
 ETD_DATA = deque(maxlen=BART_NGHOST)
-GHOST_WEIGHT = [1.0, 0.6, 0.4, 0.3]
+GHOST_WEIGHT = [1.0, 0.4, 0.2, 0.1]
 
 async def fetch_bart_data(station):
     bart_api_url = (
@@ -127,14 +127,17 @@ def get_color(index):
 
 COLOR_MAP = {
     'RED': 	(1.0, 0.0, 0.0),
-    'ORANGE':	(1.0, 0.7, 0.4),
+    'ORANGE':	(1.0, 0.4, 0.0),
     'YELLOW':	(1.0, 1.0, 0.0),
     'GREEN':	(0.0, 1.0, 0.0),
     'BLUE':	(0.0, 0.0, 1.0),
     'WHITE':	(1.0, 1.0, 1.0),
 }
 
-def normalize_rgb(rgb):
+def scale_rgb(rgb, factor):
+    return tuple(component * factor for component in rgb)
+
+def fit_rgb(rgb):
     # Find the maximum component in the tuple
     max_value = max(rgb)
     # If the maximum component is greater than 1.0, scale each component
@@ -143,16 +146,22 @@ def normalize_rgb(rgb):
     else:
         return rgb  # If max_value is 1.0 or less, return as is
 
-def scale_rgb(rgb, factor):
-    return tuple(component * factor for component in rgb)
+def apply_gamma(rgb, gamma_r=1.6, gamma_g=1.6, gamma_b=1.4):
+    r, g, b = rgb
+    return (r ** gamma_r, g ** gamma_g, b ** gamma_b)
 
-def rgb_to_hex(rgb, gamma_r=2.4, gamma_g=2.0, gamma_b=1.6):
-    r, g, b = (max(0.0, min(1.0, component)) for component in rgb)
-    # Apply gamma correction to each component
-    r_corrected = int((r ** gamma_r) * 255)
-    g_corrected = int((g ** gamma_g) * 255)
-    b_corrected = int((b ** gamma_b) * 255)
-    return f"{r_corrected:02X}{g_corrected:02X}{b_corrected:02X}"
+# the low end of the leds requires remapping
+def compensate(rgb, offset=0.15):
+    return tuple(offset + c * (1.0 - offset) for c in rgb)
+
+def rgb_to_hex(rgb):
+    r, g, b = (int(c * 255) for c in rgb)
+    return f"{r:02X}{g:02X}{b:02X}"
+
+def process_rgb(rgb):
+    val = rgb_to_hex(compensate(apply_gamma(fit_rgb(rgb))))
+    # print(val)
+    return val
 
 def pattern_segment(seq):
     ndx = int(seq/20)
@@ -164,7 +173,7 @@ def pattern_segment(seq):
     seg = []
     while factor <= 1.0:
         seg.append(ndx)
-        seg.append(rgb_to_hex(normalize_rgb(scale_rgb(rgb, factor))))
+        seg.append(process_rgb(scale_rgb(rgb, factor)))
         ndx += 1
         factor += 0.1
     return seg
@@ -216,8 +225,8 @@ def bart_segment(seq):
         item
         for index in range(WLED_NLEDS)
         for item in (
-            index,
-            rgb_to_hex(normalize_rgb(rgb_array[index]))
+                index,
+                process_rgb(rgb_array[index])
         )
     ]
     return seg
