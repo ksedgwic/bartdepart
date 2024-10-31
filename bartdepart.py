@@ -91,21 +91,65 @@ def harvest_etd(direction, platform, destinations, data):
                     color = estimate['color']
                 etds.append((etd, color))
     etds.sort(key=lambda x: x[0])
-    if len(ETD_DATA) == 0:
+    ETD_DATA.append({ 'tstamp': tstamp, 'etds': etds })
+
+    # First time through only
+    if len(ETD_DATA) == 1:
         present_sorted = sorted(present, key=lambda x: x[0])
         showing_sorted = sorted(showing, key=lambda x: x[0])
         print(f"present {present_sorted}")
         print(f"showing {showing_sorted}")
+
     formatted_now = time.strftime("%H:%M:%S", time.localtime(now))
     print(f"{formatted_now}: lag {lag:>2}:", end="")
     prev_time = now
-    for etd, color in etds:
+    for i, (etd, color) in enumerate(etds):
+        if len(ETD_DATA) < 2:
+            prev_etd = None
+        else:
+            # If we don't have a WHITE and the previous line did "shift trains"
+            if ETD_DATA[-1]['etds'][0][1] != 'WHITE' and \
+               ETD_DATA[-2]['etds'][0][1] == 'WHITE':
+                # The previous line is shifted one train
+                if len(ETD_DATA[-2]['etds']) > i+1:
+                    prev_etd = ETD_DATA[-2]['etds'][i+1][0]
+                else:
+                    prev_etd = None
+            else:
+                # Normal line
+                prev_etd = ETD_DATA[-2]['etds'][i][0]
+
+        # Are we speeding up or slowing down?
+        faster = False
+        slower = False
+        tolerance = 45
+        if prev_etd and etd > prev_etd + tolerance:
+            slower = True
+        if prev_etd and etd < prev_etd - tolerance:
+            faster = True
+
         delta = int((etd - prev_time) / 60)
         etd_formatted = time.strftime("%H:%M:%S", time.localtime(etd))
-        print(f" +{delta} ({etd_formatted}:{color})", end="")
+        if slower:
+            print(f" +{delta} ({pale_red(etd_formatted)}:{color})", end="")
+        elif faster:
+            print(f" +{delta} ({pale_green(etd_formatted)}:{color})", end="")
+        else:
+            print(f" +{delta} ({etd_formatted}:{color})", end="")
         prev_time = etd
     print()
-    ETD_DATA.append({ 'tstamp': tstamp, 'etds': etds })
+
+def pale_yellow(text):
+    # Use RGB values for pale yellow (e.g., RGB(255, 255, 204))
+    return f"\033[48;2;255;255;204m{text}\033[0m"
+
+def pale_red(text):
+    # Use RGB values for pale red (e.g., RGB(255, 204, 204))
+    return f"\033[48;2;255;204;204m{text}\033[0m"
+
+def pale_green(text):
+    # Use RGB values for pale green (e.g., RGB(204, 255, 204))
+    return f"\033[48;2;204;255;204m{text}\033[0m"
 
 async def track_bart(station, *, direction=None, platform=None, destinations=None):
     while True:
