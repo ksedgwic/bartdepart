@@ -20,6 +20,7 @@ WLED_BRIGHTNESS = 1.0
 BART_API_KEY = os.getenv("BART_API_KEY")
 BART_SECS = 60
 BART_NGHOST = 4
+BART_PHASE = 10  # seconds past the minute target
 
 ETD_DATA = deque(maxlen=BART_NGHOST)
 GHOST_WEIGHT = [1.0, 0.4, 0.2, 0.1]
@@ -120,7 +121,7 @@ async def track_bart(station, *, direction=None, platform=None, destinations=Non
 
         # Calculate time until the top of the next minute
         now = time.time()
-        seconds_until_next_sample = BART_SECS - (now % BART_SECS)
+        seconds_until_next_sample = BART_SECS - ((now - BART_PHASE) % BART_SECS)
         await asyncio.sleep(seconds_until_next_sample)
 
 def get_color(index):
