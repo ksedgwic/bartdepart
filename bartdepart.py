@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import httpx
+import math
 import os
 import sys
 import time
@@ -23,7 +24,7 @@ BART_NGHOST = 4
 BART_PHASE = 10  # seconds past the minute target
 
 ETD_DATA = deque(maxlen=BART_NGHOST)
-GHOST_WEIGHT = [1.0, 0.4, 0.2, 0.1]
+GHOST_WEIGHT = [1.0, 0.3, 0.1, 0.1]
 
 async def fetch_bart_data(station):
     bart_api_url = (
@@ -63,6 +64,20 @@ def grok_bart_time(time_str):
     # Convert to UTC and get Unix timestamp
     unix_seconds = int(dt.astimezone(pytz.UTC).timestamp())
     return unix_seconds
+
+# Given a ghost index, current index, and a train tuple return the index of a match or None
+def find_tndx(gndx, cndx, train):
+        etd, color = train
+        if gndx >= len(ETD_DATA) or gndx < -len(ETD_DATA):
+            # print(gndx, train, "OUT-OF-RANGE")
+            return None
+        ghost = ETD_DATA[gndx]
+        for tndx, (getd, gcolor) in enumerate(ETD_DATA[gndx]['etds']):
+            if gcolor == color and abs(getd - etd) < 120:
+                # print(gndx, train, tndx)
+                return tndx
+        # print(gndx, train, "NOT-FOUND")
+        return None
 
 def harvest_etd(direction, platform, destinations, data):
     global ETD_DATA
@@ -114,25 +129,16 @@ def harvest_etd(direction, platform, destinations, data):
     print(f"{formatted_now}: lag {lag:>2}:", end="")
     prev_time = now
     for i, (etd, color) in enumerate(etds):
-        if len(ETD_DATA) < 2:
-            prev_etd = None
-        else:
-            # If we don't have a WHITE and the previous line did "shift trains"
-            if ETD_DATA[-1]['etds'][0][1] != 'WHITE' and \
-               ETD_DATA[-2]['etds'][0][1] == 'WHITE':
-                # The previous line is shifted one train
-                if len(ETD_DATA[-2]['etds']) > i+1:
-                    prev_etd = ETD_DATA[-2]['etds'][i+1][0]
-                else:
-                    prev_etd = None
-            else:
-                # Normal line
-                prev_etd = ETD_DATA[-2]['etds'][i][0]
+        # What was our etd in the previous ghost (maybe don't have one)
+        prev_etd = None
+        prev_tndx = find_tndx(-2, -1, (etd, color))
+        if prev_tndx is not None:
+            prev_etd = ETD_DATA[-2]['etds'][prev_tndx][0]
 
         # Are we speeding up or slowing down?
         faster = False
         slower = False
-        tolerance = 45
+        tolerance = 30
         if prev_etd and etd > prev_etd + tolerance:
             slower = True
         if prev_etd and etd < prev_etd - tolerance:
@@ -197,6 +203,15 @@ COLOR_MAP = {
 def scale_rgb(rgb, factor):
     return tuple(component * factor for component in rgb)
 
+import math
+
+def throbbing_brightness(seq, max_brightness=1.0, steps=64):
+     # Use sin to create a smooth wave that starts at 0, goes up to max, then back to 0
+    # `steps` defines the length of one full brightness cycle
+    angle = (seq % steps) * (math.pi / (steps / 2))
+    brightness = max_brightness * (math.sin(angle) ** 2)  # Square to smooth out peaks
+    return brightness
+
 def fit_rgb(rgb):
     # Find the maximum component in the tuple
     max_value = max(rgb)
@@ -218,7 +233,7 @@ def rgb_to_hex(rgb):
     r, g, b = (int(c * 255) for c in rgb)
     return f"{r:02X}{g:02X}{b:02X}"
 
-def process_rgb(rgb):
+def process_rgb(seq, rgb):
     try:
         val = rgb_to_hex(compensate(apply_gamma(fit_rgb(rgb))))
         # print(val)
@@ -238,9 +253,9 @@ def test_pattern_segment(seq):
     seg = []
     while factor <= 1.0:
         seg.append(ndx)
-        seg.append(process_rgb(scale_rgb(rgb, factor)))
+        seg.append(process_rgb(seq, scale_rgb(rgb, factor)))
         ndx += 1
-        factor += 0.1
+        factor += 1 / 15
     return seg
 
 def bart_segment(seq):
@@ -248,8 +263,10 @@ def bart_segment(seq):
     now = time.time()
     rgb_array = [(0.0, 0.0, 0.0) for _ in range(WLED_NLEDS)]
     # iterate from most recent to oldest
-    for ghost_index, ghost in enumerate(reversed(ETD_DATA)):
-        for etd in ghost['etds']:
+    for ndx, ghost in enumerate(reversed(ETD_DATA)):
+        # ndx 0 is most recent, ghost_index is reversed
+        ghost_index = len(ETD_DATA) - 1 - ndx
+        for tndx, etd in enumerate(ghost['etds']):
             delta = int(etd[0] - now)
             if delta < 0:
                 continue
@@ -259,17 +276,32 @@ def bart_segment(seq):
             if 0 <= int_index < WLED_NLEDS:
                 r, g, b = scale_rgb(COLOR_MAP[etd[1]], WLED_BRIGHTNESS)
 
+                if ndx == 0:
+                    weight = GHOST_WEIGHT[ghost_index]
+                else:
+                    # Compare this ghost to the most current
+                    curr_tndx = find_tndx(-1, ghost_index, etd)
+                    if curr_tndx is None:
+                        continue
+
+                    # If the etd for ghost is same as current then we are steady contribution
+                    if abs(ETD_DATA[-1]['etds'][curr_tndx][0] - \
+                           ETD_DATA[ghost_index]['etds'][tndx][0]) < 30:
+                        weight = GHOST_WEIGHT[ghost_index]
+                    else:
+                        weight = GHOST_WEIGHT[ghost_index] * throbbing_brightness(seq)
+
                 # Full value if index is exactly an integer
                 if frac_index == 0:
                     rgb_array[int_index] = (
-                        rgb_array[int_index][0] + r * GHOST_WEIGHT[ghost_index],
-                        rgb_array[int_index][1] + g * GHOST_WEIGHT[ghost_index],
-                        rgb_array[int_index][2] + b * GHOST_WEIGHT[ghost_index],
+                        rgb_array[int_index][0] + r * weight,
+                        rgb_array[int_index][1] + g * weight,
+                        rgb_array[int_index][2] + b * weight,
                     )
                 else:
                     # Distribute based on fractional part
-                    lower_weight = (1.0 - frac_index) * GHOST_WEIGHT[ghost_index]
-                    upper_weight = frac_index * GHOST_WEIGHT[ghost_index]
+                    lower_weight = (1.0 - frac_index) * weight
+                    upper_weight = frac_index * weight
 
                     # Accumulate the lower part
                     if 0 <= int_index < WLED_NLEDS:
@@ -291,7 +323,7 @@ def bart_segment(seq):
         for index in range(WLED_NLEDS)
         for item in (
                 index,
-                process_rgb(rgb_array[index])
+                process_rgb(seq, rgb_array[index])
         )
     ]
     return seg
