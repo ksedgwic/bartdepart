@@ -75,7 +75,12 @@ def harvest_etd(direction, platform, destinations, data):
     for station in data['root']['station']:
         for dest in station['etd']:
             for estimate in dest['estimate']:
-                present.add((estimate['direction'], estimate['platform'], dest['destination']))
+                present.add((
+                    estimate['color'],
+                    estimate['direction'],
+                    estimate['platform'],
+                    dest['destination']
+                    ))
                 # need to filter after we record what we saw
                 if len(destinations) and dest['destination'] not in destinations:
                     continue
@@ -83,7 +88,11 @@ def harvest_etd(direction, platform, destinations, data):
                     continue
                 if platform and estimate['platform'] != platform:
                     continue
-                showing.add((estimate['direction'], estimate['platform'], dest['destination']))
+                showing.add((
+                    estimate['color'],
+                    estimate['direction'],
+                    estimate['platform'],
+                    dest['destination']))
                 if estimate['minutes'] == "Leaving":
                     etd = tstamp
                     color = 'WHITE'
