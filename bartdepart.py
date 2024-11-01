@@ -168,6 +168,12 @@ def pale_green(text):
     return f"\033[48;2;204;255;204m{text}\033[0m"
 
 async def track_bart(station, *, direction=None, platform=None, destinations=None):
+    # Calculate time until the top of the next minute
+    now = time.time()
+    seconds_until_next_sample = BART_SECS - ((now - BART_PHASE) % BART_SECS)
+    print(f"waiting {int(seconds_until_next_sample)} seconds to start in sync")
+    await asyncio.sleep(seconds_until_next_sample)
+
     while True:
         # Retry until data is successfully fetched
         while True:
