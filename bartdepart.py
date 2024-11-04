@@ -277,7 +277,7 @@ async def print_exception(coro):
         print(f"Exception in task: {e}")
         raise  # Re-raise to propagate to gather
 
-async def main() -> None:
+async def start() -> None:
     """Show example on controlling your WLED device."""
     parser = argparse.ArgumentParser(description="Process BART station and destinations.")
     add_args(parser)
@@ -373,5 +373,8 @@ def add_args(parser):
         help="Display a test pattern"
     )
 
+def main():
+    asyncio.run(start())
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
