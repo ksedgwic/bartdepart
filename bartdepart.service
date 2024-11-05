@@ -1,0 +1,13 @@
+[Unit]
+Description=BART Depart Daemon
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/bartdepart --station NBRK -d South
+Restart=always
+User=user
+Environment=PYTHONUNBUFFERED=1
+Environment=BART_API_KEY=YOUR-API-KEY-HERE
+
+[Install]
+WantedBy=multi-user.target
