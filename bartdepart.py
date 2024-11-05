@@ -118,15 +118,20 @@ def harvest_etd(direction, platform, destinations, data):
     ETD_DATA.append({ 'tstamp': tstamp, 'etds': etds })
 
 async def track_bart(station, *, direction=None, platform=None, destinations=None):
+    max_delay = 64  # Maximum backoff delay in seconds
+    delay = 1       # Initial delay for retry
+
     while True:
         # Retry until data is successfully fetched
         while True:
             data = await fetch_bart_data(station)
             if data:
                 harvest_etd(direction, platform, destinations, data)
+                delay = 1  # Reset delay after successful fetch
                 break  # Exit the retry loop once data is fetched
             else:
-                await asyncio.sleep(1)  # Retry in 1 second if no data
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, max_delay)  # Exponential backoff
 
         # Calculate time until the top of the next minute
         now = time.time()
