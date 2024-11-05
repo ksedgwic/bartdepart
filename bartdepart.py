@@ -14,6 +14,7 @@ from wled import WLED, Device
 WLED_IP = "192.168.86.49"
 WLED_NLEDS = 60
 WLED_BRIGHTNESS = 0.75
+WLED_FPS = 5
 
 # BART_ORIG = "NBRK"
 # BART_DIRECTION = "South"
@@ -269,7 +270,7 @@ async def update_display(wled, test_pattern):
         else:
             seg_array = bart_segment(seq)
         await wled.segment(0, individual=seg_array)
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(1.0/WLED_FPS)
         seq += 1
 
 def wled_updated(device: Device) -> None:
