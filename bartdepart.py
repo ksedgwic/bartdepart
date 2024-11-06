@@ -13,7 +13,7 @@ from wled import WLED, Device
 
 WLED_IP = "192.168.86.49"
 WLED_NLEDS = 60
-WLED_BRIGHTNESS = 1.0
+WLED_BRIGHTNESS = 0.75
 
 # BART_ORIG = "NBRK"
 # BART_DIRECTION = "South"
@@ -148,7 +148,7 @@ def get_color(index):
 
 COLOR_MAP = {
     'RED': 	(1.0, 0.0, 0.0),
-    'ORANGE':	(1.0, 0.4, 0.0),
+    'ORANGE':	(1.0, 0.6, 0.2),
     'YELLOW':	(1.0, 1.0, 0.0),
     'GREEN':	(0.0, 1.0, 0.0),
     'BLUE':	(0.0, 0.0, 1.0),
@@ -172,8 +172,12 @@ def apply_gamma(rgb, gamma_r=1.6, gamma_g=1.6, gamma_b=1.4):
     return (r ** gamma_r, g ** gamma_g, b ** gamma_b)
 
 # the low end of the leds requires remapping
-def compensate(rgb, offset=0.15):
-    return tuple(offset + c * (1.0 - offset) for c in rgb)
+def compensate(rgb, off_r=0.11, off_g=0.10, off_b=0.12):
+    return (
+        off_r + rgb[0] * (1.0 - off_r),
+        off_g + rgb[1] * (1.0 - off_g),
+        off_b + rgb[2] * (1.0 - off_b)
+    )
 
 def rgb_to_hex(rgb):
     r, g, b = (int(c * 255) for c in rgb)
