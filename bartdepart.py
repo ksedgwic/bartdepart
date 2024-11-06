@@ -36,6 +36,10 @@ async def fetch_bart_data(station):
             response = await client.get(bart_api_url)
             response.raise_for_status()  # Raise error for bad status codes
             data = response.json()       # Parse response as JSON
+            # Sanity check response
+            if 'root' not in data or 'time' not in data['root'] or 'station' not in data['root']:
+                print("Missing 'root' or necessary data keys in API response")
+                return None
             return data
         except httpx.HTTPStatusError as e:
             # print(f"HTTP error occurred: {e}", file=sys.stderr)
