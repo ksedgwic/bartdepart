@@ -22,6 +22,10 @@ BART_API_KEY = os.getenv("BART_API_KEY")
 BART_SECS = 60
 BART_NGHOST = 4
 BART_PHASE = 5  # seconds past the top of the minute
+BART_SOD = "05:00"  # Start of polling
+BART_EOD = "01:00"  # End of polling (next day)
+BART_EOD_TIME = datetime.strptime(BART_EOD, "%H:%M").time()
+BART_SOD_TIME = datetime.strptime(BART_SOD, "%H:%M").time()
 
 ETD_DATA = deque(maxlen=BART_NGHOST)
 GHOST_WEIGHT = [1.0, 0.4, 0.2, 0.1]
@@ -127,6 +131,20 @@ async def track_bart(station, *, direction=None, platform=None, destinations=Non
     delay = 1       # Initial delay for retry
 
     while True:
+        now = int(datetime.now().timestamp())
+
+        # These need to be recalculated because the day updates at midnight
+        # BART_EOD is always earlier
+        today = datetime.now().date()
+        bart_eod = int(datetime.combine(today, BART_EOD_TIME).timestamp())
+        bart_sod = int(datetime.combine(today, BART_SOD_TIME).timestamp())
+
+        if now > bart_eod and now < bart_sod:
+            sleep_until = bart_sod - now
+            print(f"sleeping for {sleep_until} seconds until {BART_SOD}")
+            await asyncio.sleep(sleep_until)
+            continue
+
         # Retry until data is successfully fetched
         while True:
             data = await fetch_bart_data(station)
