@@ -11,7 +11,7 @@ import pytz
 
 from wled import WLED, Device
 
-WLED_IP = "192.168.86.49"
+WLED_IP = os.getenv("WLED_IP")
 WLED_NLEDS = 60
 WLED_BRIGHTNESS = 0.75
 WLED_FPS = 5
@@ -320,7 +320,8 @@ async def start() -> None:
     platform = args.platform
     destinations = args.destination if args.destination else []  # Default to an empty list if None
 
-    if args.no_wled:
+    if args.no_wled or not WLED_IP:
+        print("running w/o WLED");
         tracker = asyncio.create_task(
             print_exception(track_bart(station,
                                        direction=direction,
@@ -335,6 +336,7 @@ async def start() -> None:
             tracker.cancel()
             await asyncio.gather(tracker, return_exceptions=True)
     else:
+        print(f"connecting to WLED at {WLED_IP}");
         async with WLED(WLED_IP) as wled:
             await wled.connect()
             if wled.connected:
