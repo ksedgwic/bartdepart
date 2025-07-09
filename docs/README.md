@@ -1,7 +1,21 @@
 
 # BartDepart
 
-Uses the BART API and the WLED python library to create a departure display.
+Use the BART API and the WLED python library to create a LED departure display.
+
+
+## Hardware
+
+- [LED Strip Supplier](https://www.superlightingled.com/rgb-flexible-led-strip-lights-c-3_26.html)
+- [LED Controller](https://www.athom.tech/blank-1/wled-high-power-led-strip-controller)
+- [Power Supply](https://www.amazon.com/dp/B07BJMJQ64)
+
+
+## WLED Open Source LED Control Software
+
+- [WLED Project Repository](https://github.com/wled/WLED)
+- [Python: WLED API Client](https://github.com/frenck/python-wled)
+
 
 ## BART API
 
@@ -296,8 +310,3 @@ Formatted Query Result:
   }
 }
 ```
-
-## WLED API
-
-- [WLED Project Repository](https://github.com/wled/WLED)
-- [Python: WLED API Client](https://github.com/frenck/python-wled)
